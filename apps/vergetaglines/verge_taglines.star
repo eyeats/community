@@ -5,12 +5,12 @@ Description: Displays the latest tagline from the top of popular tech news site 
 Author: joevgreathead
 """
 
-load("render.star", "render")
-load("http.star", "http")
-load("html.star", "html")
-load("encoding/base64.star", "base64")
 load("cache.star", "cache")
+load("encoding/base64.star", "base64")
+load("html.star", "html")
+load("http.star", "http")
 load("random.star", "random")
+load("render.star", "render")
 
 # 16x16
 VERGE_LOGO = base64.decode("""
@@ -65,28 +65,46 @@ PLACEHOLDER_TEXT = "THE VERGE"
 
 SITE = "https://www.theverge.com"
 CACHE_KEY_TAGLINE = "verge-dot-com-tagline"
-SELECTOR_TAGLINE = ".duet--recirculation--storystream-header > p > span > a"
+CACHE_KEY_TAGLINE_BACKUP = "verge-dot-com-tagline-backup"
+SELECTOR_TAGLINE = ".duet--recirculation--storystream-header"
 
 def main():
     tagline = cache.get(CACHE_KEY_TAGLINE)
+    tagline_backup = cache.get(CACHE_KEY_TAGLINE_BACKUP)
 
     if tagline == None:
         resp = http.get(SITE)
-        html_body = html(resp.body())
-        tagline = get_tagline(html_body)
+        resp_body = html(resp.body())
+        tagline = get_tagline(resp_body)
+        if tagline == None or tagline == "":
+            if tagline_backup == None:
+                tagline = PLACEHOLDER_TEXT
+                display = PLACEHOLDER_TEXT
+            else:
+                tagline = tagline_backup
+                display = "* " + tagline_backup
+        else:
+            display = tagline
+
+        # TODO: Determine if this cache call can be converted to the new HTTP cache.
         cache.set(CACHE_KEY_TAGLINE, tagline, ttl_seconds = 900)
+
+        # TODO: Determine if this cache call can be converted to the new HTTP cache.
+        cache.set(CACHE_KEY_TAGLINE_BACKUP, tagline, ttl_seconds = 1200)
+    else:
+        display = tagline
 
     return render.Root(
         child = render.Column(
             expanded = True,
             main_align = "space_evenly",
             cross_align = "center",
-            children = content(tagline),
+            children = content(display),
         ),
     )
 
 def get_tagline(html_body):
-    text = html_body.find(SELECTOR_TAGLINE).text()
+    text = html_body.find(SELECTOR_TAGLINE).children().find("span > a").text()
     if text == None:
         return PLACEHOLDER_TEXT
     else:

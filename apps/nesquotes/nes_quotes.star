@@ -5,13 +5,12 @@ Description: Displays random quotes from Nintendo Entertainment System games.
 Author: Mark McIntyre
 """
 
-load("render.star", "render")
-load("random.star", "random")
-load("schema.star", "schema")
+load("encoding/base64.star", "base64")
 load("encoding/csv.star", "csv")
 load("http.star", "http")
-load("cache.star", "cache")
-load("encoding/base64.star", "base64")
+load("random.star", "random")
+load("render.star", "render")
+load("schema.star", "schema")
 
 CSV_ENDPOINT = "https://gist.githubusercontent.com/markmcintyre/b39cf560d7e66bc0b987f809ca4a568f/raw/nes-quotes.csv"
 GAME_COL = 0
@@ -23,32 +22,33 @@ CACHE_TTL = 604800
 
 # CREATE SLUG
 # -----------
+# def slug(str):
+#     result = ""
+#
+#     for c in str.lower().elems():
+#         if c.isalnum():
+#             result += c
+#         elif c == " ":
+#             result += "-"
+#
+#     return c
 def slug(str):
-    result = ""
-
-    for c in str.lower().elems():
-        if c.isalnum():
-            result += c
-        elif c == " ":
-            result += "-"
-
-    return c
+    # The original method was not correct, and the linter complained about
+    # result being unused. The issue is, this method is used to create an ID
+    # for schema fields. If we change the ID, it will break any existing
+    # installations. Therefore, the safest option is to mimic the behavior of
+    # the original function.
+    return str.lower().elems()[-1]
 
 # GET DATA
 # --------
 def get_data():
-    # Check our cache
-    nes_quotes = cache.get("nes_quotes")
+    request = http.get(CSV_ENDPOINT, ttl_seconds = CACHE_TTL)
+    if request.status_code != 200:
+        print("Unexpected status code: " + request.status_code)
+        return []
 
-    # If we don't have a cached version, fetch the data now
-    if nes_quotes == None:
-        request = http.get(CSV_ENDPOINT)
-        if request.status_code != 200:
-            print("Unexpected status code: " + request.status_code)
-            return []
-
-        nes_quotes = request.body()
-        cache.set("nes_quotes", nes_quotes, ttl_seconds = CACHE_TTL)
+    nes_quotes = request.body()
 
     # Return our quotes, except for the header line
     return csv.read_all(nes_quotes, skip = 1)

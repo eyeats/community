@@ -5,6 +5,15 @@ Description: Displays the most recent earthquakes based on location.
 Author: Chris Silverberg (csilv)
 """
 
+# Version: 1.0.2 (2024/09/27)
+# PR: Billy_McSkintos
+# Changes
+# - Added start_time param affected by a lookback config item
+# - Added Lookback to limit results with the goal of the app not showing anything
+# if there are no recent events
+# - Commented out error if no features
+#---------------------------------------------------------------------------------
+
 # USGS Earthquakes
 # Version: 1.0.1 (2022/05/07)
 #
@@ -31,6 +40,7 @@ Author: Chris Silverberg (csilv)
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+load("animation.star", "animation")
 load("cache.star", "cache")
 load("encoding/base64.star", "base64")
 load("encoding/json.star", "json")
@@ -60,6 +70,7 @@ DEFAULT_LOCATION = """
 """
 DEFAULT_MAGNITUDE = "3"
 DEFAULT_RADIUS = "0"
+DEFAULT_DAYS = "30"
 
 ICON = base64.decode("""
 iVBORw0KGgoAAAANSUhEUgAAAAoAAAAICAYAAADA+m62AAAAAXNSR0IArs4c6QAAAD1JREFUKFNjZM
@@ -81,8 +92,13 @@ def main(config):
     radius = config.get("radius", DEFAULT_RADIUS)
     magnitude = config.get("magnitude", DEFAULT_MAGNITUDE)
 
+    # Get Lookback
+    timezone = config.get("timezone") or "America/Los_Angeles"
+    now = time.now().in_location(timezone)
+    start_time = (now - time.parse_duration("%dh" % (int(config.get("lookback", DEFAULT_DAYS)) * 24))).format("2006-01-02")
+
     # Fetch earthquakes from the cache or network.
-    earthquakes = fetch_earthquakes(lat, lng, radius, magnitude)
+    earthquakes = fetch_earthquakes(lat, lng, radius, magnitude, start_time)
     if not earthquakes:
         return []
 
@@ -168,7 +184,7 @@ def get_page_frame(mag_str, mag_color, place_str, place_x, time_str):
                     main_align = "center",
                 ),
                 render.Box(
-                    child = render.AnimatedPositioned(
+                    child = animation.AnimatedPositioned(
                         child = render.Text(place_str),
                         curve = "linear",
                         duration = 0,
@@ -208,11 +224,11 @@ def get_scroll_frames(item, next_item):
         for offset in range(-1, -DEVICE_HEIGHT - 1, -1)
     ]
 
-def fetch_earthquakes(lat, lng, radius, magnitude):
+def fetch_earthquakes(lat, lng, radius, magnitude, start_time):
     # For global earthquakes, the cache_key will just be the magnitude.
     cache_key = magnitude
     if radius != "0":
-        cache_key = "%s_%s_%s_%s" % (lat, lng, radius, magnitude)
+        cache_key = "%s_%s_%s_%s_%s" % (lat, lng, radius, magnitude, start_time)
     cache_data = cache.get(cache_key)
     if cache_data:
         return json.decode(cache_data)
@@ -221,6 +237,7 @@ def fetch_earthquakes(lat, lng, radius, magnitude):
         "format": "geojson",
         "minmagnitude": magnitude,
         "limit": str(MAX_QUAKES),
+        "starttime": start_time,
     }
     if radius != "0":
         geo_params = {
@@ -238,11 +255,8 @@ def fetch_earthquakes(lat, lng, radius, magnitude):
         return None
 
     features = resp.json().get("features")
-    if not features:
-        # buildifier: disable=print
-        print("missing features: %s" & resp.body())
-        return None
 
+    # TODO: Determine if this cache call can be converted to the new HTTP cache.
     cache.set(cache_key, json.encode(features), CACHE_TTL)
     return features
 
@@ -295,6 +309,13 @@ def get_schema():
                 icon = "brush",
                 default = DEFAULT_MAGNITUDE,
                 options = magnitude_options,
+            ),
+            schema.Text(
+                id = "lookback",
+                name = "Lookback",
+                desc = "Limit events that occurred on or after this many days ago",
+                icon = "arrowLeft",
+                default = DEFAULT_DAYS,
             ),
         ],
     )
